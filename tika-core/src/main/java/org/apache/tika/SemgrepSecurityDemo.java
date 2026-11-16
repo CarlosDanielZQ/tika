@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.Socket;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import javax.crypto.Cipher;
 
 public final class SemgrepSecurityDemo {
 
@@ -22,7 +23,12 @@ public final class SemgrepSecurityDemo {
     // Tâche 3 : utilisation volontaire d'un algorithme faible.
     MessageDigest digest = MessageDigest.getInstance("MD5");
     return digest.digest(data);
-}
+    }
+
+    public static Cipher createWeakCipher() throws Exception {
+    // Tâche 3 : utilisation volontaire d'un chiffrement faible.
+    return Cipher.getInstance("DES/ECB/PKCS5Padding");
+    }
 }
 
 
