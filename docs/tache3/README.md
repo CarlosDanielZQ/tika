@@ -302,3 +302,7 @@ L'intégration de Semgrep à GitHub Actions a permis de détecter sept construct
 Le workflow différentiel a démontré sa capacité à provoquer l'échec du contrôle de sécurité lorsqu'une nouvelle vulnérabilité bloquante est introduite, tout en évitant de traiter les alertes historiques comme des nouveautés.
 
 Cette démarche démontre l'intérêt de l'analyse statique automatisée dans un processus d'intégration continue, ainsi que ses limites liées à la couverture des règles et à la configuration de l'analyse.
+
+## 8. Déclaration d'utilisation de l'IA
+
+Nous avons utilisé **ChatGPT (OpenAI, modèle GPT-6)** en **novembre 2026** comme assistant technique. Il nous a aidés à intégrer Semgrep aux workflows GitHub Actions, à configurer l'analyse différentielle et à interpréter les résultats. Il nous a également proposé des vulnérabilités Java à expérimenter jusqu'à obtenir sept détections distinctes. Enfin, il nous a accompagnés dans l'organisation des étapes, la résolution des difficultés et la rédaction de la documentation.
