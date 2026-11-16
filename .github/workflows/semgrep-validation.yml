@@ -22,7 +22,7 @@ jobs:
       - name: Install Semgrep
         run: python -m pip install semgrep
 
-            - name: List Semgrep Java rules
+      - name: List Semgrep Java rules
         run: |
           semgrep scan --config p/java --metrics=off --json \
             tika-core/src/main/java/org/apache/tika/SemgrepSecurityDemo.java \
