@@ -26,17 +26,21 @@ jobs:
       - name: List all Semgrep Java rules
         run: |
           semgrep scan --config p/java --metrics=off \
-            --validate --json > semgrep-config.json
+            --dump-config > semgrep-config.yml
 
           python - <<'PY'
-          import json
+          import yaml
 
-          with open("semgrep-config.json", encoding="utf-8") as f:
-              data = json.load(f)
+          with open("semgrep-config.yml", encoding="utf-8") as f:
+              data = yaml.safe_load(f)
 
-          print("Résultat de la validation Semgrep :")
-          print(json.dumps(data, indent=2))
+          rules = data.get("rules", [])
+          print(f"Nombre de règles : {len(rules)}")
+
+          for rule in rules:
+              print(rule.get("id", "Identifiant inconnu"))
           PY
+
 
 
       - name: Run Semgrep
