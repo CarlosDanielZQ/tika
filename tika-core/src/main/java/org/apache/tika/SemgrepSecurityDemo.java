@@ -8,7 +8,8 @@ import javax.crypto.Cipher;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
-import java.util.Random;
+import java.security.cert.X509Certificate;
+import javax.net.ssl.X509TrustManager;
 
 
 public final class SemgrepSecurityDemo {
@@ -58,15 +59,28 @@ public final class SemgrepSecurityDemo {
         return statement.executeQuery(query);
     }
 
-    public static String generateInsecureToken() {
 
-        // Tâche 3 : génération volontairement non sécurisée
-        // d'un jeton d'authentification.
-        Random random = new Random();
+    public static X509TrustManager createUnsafeTrustManager() {
+        // Tâche 3 : désactivation volontaire
+        // de la validation des certificats TLS.
+        return new X509TrustManager() {
+            @Override
+            public void checkClientTrusted(
+                    X509Certificate[] chain, String authType) {
+                // Aucune vérification
+            }
 
-        int token = random.nextInt(1000000);
+            @Override
+            public void checkServerTrusted(
+                    X509Certificate[] chain, String authType) {
+                // Accepte tous les certificats
+            }
 
-        return Integer.toString(token);
+            @Override
+            public X509Certificate[] getAcceptedIssuers() {
+                return new X509Certificate[0];
+            }
+        };
     }
 
 }
