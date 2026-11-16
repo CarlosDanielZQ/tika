@@ -73,16 +73,10 @@ public final class SemgrepSecurityDemo {
         return statement.executeQuery(query);
     }
 
-    public static Process executeUnsafeCommand(String userInput)
-            throws java.io.IOException {
-
-        // Tâche 3 : exécution volontairement non sécurisée
-        // d'une commande construite à partir d'une entrée externe.
-        String command = "echo " + userInput;
-
-        return Runtime.getRuntime().exec(
-                new String[] {"sh", "-c", command}
-        );
+    public static Cipher createWeakRC4Cipher() throws Exception {
+        // Tâche 3 : utilisation volontaire d'un algorithme
+        // de chiffrement obsolète.
+        return Cipher.getInstance("RC4");
     }
 
 }
