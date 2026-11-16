@@ -8,6 +8,7 @@ import javax.crypto.Cipher;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.Random;
 
 
 public final class SemgrepSecurityDemo {
@@ -55,6 +56,17 @@ public final class SemgrepSecurityDemo {
                 + userInput + "'";
 
         return statement.executeQuery(query);
+    }
+
+    public static String generateInsecureToken() {
+
+        // Tâche 3 : génération volontairement non sécurisée
+        // d'un jeton d'authentification.
+        Random random = new Random();
+
+        int token = random.nextInt(1000000);
+
+        return Integer.toString(token);
     }
 
 }
