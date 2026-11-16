@@ -1,14 +1,18 @@
 package org.apache.tika;
 
+import java.io.IOException;
+import java.net.Socket;
+
 public final class SemgrepSecurityDemo {
 
     private SemgrepSecurityDemo() {
     }
 
-    public static String getDatabasePassword() {
+    public static Socket createUnencryptedSocket() throws IOException {
         // Tâche 3 : vulnérabilité volontaire à des fins pédagogiques.
-        String password = "admin123";
-        return password;
+        Socket socket = new Socket();
+        return socket;
     }
 }
+
 
