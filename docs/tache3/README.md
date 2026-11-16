@@ -1,5 +1,7 @@
 # Tâche 3 — Automatisation des tests de sécurité avec Semgrep
 
+Réalisé par David Correa Ruiz et Carlos Daniel Zelaya Quinteros.
+
 ## 1. Objectif et intégration de Semgrep dans GitHub Actions
 
 L'objectif de cette tâche est d'intégrer un outil d'analyse statique de sécurité, Semgrep, au processus d'intégration continue du projet Apache Tika. Cette intégration vise à détecter les vulnérabilités introduites par de nouvelles modifications et à provoquer l'échec du contrôle de sécurité lorsqu'une nouvelle vulnérabilité bloquante est détectée.
