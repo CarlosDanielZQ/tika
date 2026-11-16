@@ -2,7 +2,8 @@ package org.apache.tika;
 
 import java.io.IOException;
 import java.net.Socket;
-import java.util.Random;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 public final class SemgrepSecurityDemo {
 
@@ -15,11 +16,13 @@ public final class SemgrepSecurityDemo {
         return socket;
     }
 
-    public static long generateInsecureToken() {
-        // Tâche 3 : génération volontairement non sécurisée.
-        Random random = new Random();
-        return random.nextLong();
-    }
+    public static byte[] generateWeakHash(byte[] data)
+        throws NoSuchAlgorithmException {
+
+    // Tâche 3 : utilisation volontaire d'un algorithme faible.
+    MessageDigest digest = MessageDigest.getInstance("MD5");
+    return digest.digest(data);
+}
 }
 
 
