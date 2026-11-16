@@ -5,8 +5,7 @@ import java.net.Socket;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import javax.crypto.Cipher;
-import java.io.InputStream;
-import java.io.ObjectInputStream;
+
 
 public final class SemgrepSecurityDemo {
 
@@ -32,13 +31,15 @@ public final class SemgrepSecurityDemo {
     return Cipher.getInstance("DES/ECB/PKCS5Padding");
     }
 
-    public static Object deserializeUntrustedData(InputStream input)
-        throws Exception {
 
-    // Tâche 3 : désérialisation volontairement non sécurisée.
-    ObjectInputStream objectInput = new ObjectInputStream(input);
-    return objectInput.readObject();
+    public static byte[] generateWeakSHA1Hash(byte[] data)
+            throws NoSuchAlgorithmException {
+
+        // Tâche 3 : utilisation volontaire de SHA-1.
+        MessageDigest digest = MessageDigest.getInstance("SHA-1");
+        return digest.digest(data);
     }
+
 }
 
 
