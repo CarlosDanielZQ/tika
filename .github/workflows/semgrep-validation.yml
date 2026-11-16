@@ -26,8 +26,17 @@ jobs:
       - name: List all Semgrep Java rules
         run: |
           semgrep scan --config p/java --metrics=off \
-            --dump-rule-ids \
-            tika-core/src/main/java/org/apache/tika/SemgrepSecurityDemo.java
+            --validate --json > semgrep-config.json
+
+          python - <<'PY'
+          import json
+
+          with open("semgrep-config.json", encoding="utf-8") as f:
+              data = json.load(f)
+
+          print("Résultat de la validation Semgrep :")
+          print(json.dumps(data, indent=2))
+          PY
 
 
       - name: Run Semgrep
