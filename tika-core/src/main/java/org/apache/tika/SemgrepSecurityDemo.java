@@ -1,15 +1,29 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.apache.tika;
 
 import java.io.IOException;
 import java.net.Socket;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import javax.crypto.Cipher;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
-import java.security.cert.X509Certificate;
-import javax.net.ssl.X509TrustManager;
+import javax.crypto.Cipher;
 
 
 public final class SemgrepSecurityDemo {
@@ -59,30 +73,16 @@ public final class SemgrepSecurityDemo {
         return statement.executeQuery(query);
     }
 
+    public static Process executeUnsafeCommand(String userInput)
+            throws java.io.IOException {
 
-    public static X509TrustManager createUnsafeTrustManager() {
-        // Tâche 3 : désactivation volontaire
-        // de la validation des certificats TLS.
-        return new X509TrustManager() {
-            @Override
-            public void checkClientTrusted(
-                    X509Certificate[] chain, String authType) {
-                // Aucune vérification
-            }
+        // Tâche 3 : exécution volontairement non sécurisée
+        // d'une commande construite à partir d'une entrée externe.
+        String command = "echo " + userInput;
 
-            @Override
-            public void checkServerTrusted(
-                    X509Certificate[] chain, String authType) {
-                // Accepte tous les certificats
-            }
-
-            @Override
-            public X509Certificate[] getAcceptedIssuers() {
-                return new X509Certificate[0];
-            }
-        };
+        return Runtime.getRuntime().exec(
+                new String[] {"sh", "-c", command}
+        );
     }
 
 }
-
-
