@@ -5,6 +5,9 @@ import java.net.Socket;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import javax.crypto.Cipher;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
 
 
 public final class SemgrepSecurityDemo {
@@ -38,6 +41,20 @@ public final class SemgrepSecurityDemo {
         // Tâche 3 : utilisation volontaire de SHA-1.
         MessageDigest digest = MessageDigest.getInstance("SHA-1");
         return digest.digest(data);
+    }
+
+
+    public static ResultSet executeUnsafeQuery(
+            Connection connection, String userInput)
+            throws Exception {
+
+        // Tâche 3 : construction volontairement vulnérable.
+        Statement statement = connection.createStatement();
+
+        String query = "SELECT * FROM users WHERE name = '"
+                + userInput + "'";
+
+        return statement.executeQuery(query);
     }
 
 }
