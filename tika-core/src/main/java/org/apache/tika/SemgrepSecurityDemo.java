@@ -79,4 +79,9 @@ public final class SemgrepSecurityDemo {
         return Cipher.getInstance("RC4");
     }
 
+    public static Cipher createWeakBlowfishCipher() throws Exception {
+    // Tâche 3 : utilisation volontaire d'un algorithme
+    // de chiffrement ancien.
+    return Cipher.getInstance("Blowfish");
+    }
 }
