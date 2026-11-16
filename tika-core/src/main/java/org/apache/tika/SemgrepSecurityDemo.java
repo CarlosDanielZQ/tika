@@ -5,6 +5,8 @@ import java.net.Socket;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import javax.crypto.Cipher;
+import java.io.InputStream;
+import java.io.ObjectInputStream;
 
 public final class SemgrepSecurityDemo {
 
@@ -28,6 +30,14 @@ public final class SemgrepSecurityDemo {
     public static Cipher createWeakCipher() throws Exception {
     // Tâche 3 : utilisation volontaire d'un chiffrement faible.
     return Cipher.getInstance("DES/ECB/PKCS5Padding");
+    }
+
+    public static Object deserializeUntrustedData(InputStream input)
+        throws Exception {
+
+    // Tâche 3 : désérialisation volontairement non sécurisée.
+    ObjectInputStream objectInput = new ObjectInputStream(input);
+    return objectInput.readObject();
     }
 }
 
