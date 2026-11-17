@@ -1,0 +1,78 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# IFT3913 - Tache 3 : validation de l'action rickroll sans lancer tout le build Tika.
+#  - test-fails  : active RickrollDemoTest (echec volontaire) -> job rouge + rickroll attendu.
+#  - test-passes : meme test sans la variable (test ignore)    -> job vert, aucun rickroll.
+
+name: Rickroll Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - tache3-semgrep
+    paths:
+      - ".github/actions/rickroll/**"
+      - ".github/workflows/rickroll-validation.yml"
+      - "tika-core/src/test/java/org/apache/tika/RickrollDemoTest.java"
+
+permissions:
+  contents: read
+
+jobs:
+  test-fails:
+    name: Test en echec -> rickroll attendu
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "17"
+          cache: "maven"
+      - name: Run RickrollDemoTest (echec volontaire)
+        id: tests
+        env:
+          TIKA_RICKROLL_DEMO: "true"
+        run: mvn -B -pl tika-core -am test -Dtest=RickrollDemoTest -Dsurefire.failIfNoSpecifiedTests=false
+      - name: Rickroll on test failure
+        if: failure() && steps.tests.outcome == 'failure'
+        uses: ./.github/actions/rickroll
+        with:
+          reports: "**/target/surefire-reports/TEST-*.xml"
+
+  test-passes:
+    name: Tests au vert -> pas de rickroll
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "17"
+          cache: "maven"
+      - name: Run RickrollDemoTest (ignore sans TIKA_RICKROLL_DEMO)
+        id: tests
+        run: mvn -B -pl tika-core -am test -Dtest=RickrollDemoTest -Dsurefire.failIfNoSpecifiedTests=false
+      - name: Rickroll on test failure
+        if: failure() && steps.tests.outcome == 'failure'
+        uses: ./.github/actions/rickroll

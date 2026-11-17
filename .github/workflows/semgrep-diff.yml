@@ -1,0 +1,134 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# IFT3913 - Tache 3
+# Workflow reutilisable : echoue si les commits analyses introduisent au moins
+# une NOUVELLE alerte Semgrep par rapport a un commit de reference.
+# Appele par main-jdk17-build.yml (avant le build Maven) et par semgrep-validation.yml.
+
+name: Semgrep differential scan
+
+on:
+  workflow_call:
+    inputs:
+      config:
+        description: "Jeu de regles Semgrep"
+        type: string
+        default: "p/java"
+      baseline-ref:
+        description: "Optionnel : branche de reference (ex. origin/main). Vide = deduit de l'evenement."
+        type: string
+        default: ""
+    outputs:
+      baseline:
+        description: "Commit de reference utilise pour la comparaison"
+        value: ${{ jobs.semgrep.outputs.baseline }}
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Semgrep (nouvelles vulnerabilites)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      baseline: ${{ steps.baseline.outputs.sha }}
+    env:
+      # Version figee : le resultat du controle ne doit pas changer d'un jour a l'autre
+      # parce qu'une nouvelle version de Semgrep est publiee.
+      SEMGREP_VERSION: "1.185.0"
+      SEMGREP_CONFIG: ${{ inputs.config }}
+
+    steps:
+      - name: Checkout (historique complet)
+        uses: actions/checkout@v6
+        with:
+          # L'historique complet est necessaire pour que le commit de reference existe localement.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: python -m pip install "semgrep==${SEMGREP_VERSION}"
+
+      - name: Determine baseline commit
+        id: baseline
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          BASELINE_REF: ${{ inputs.baseline-ref }}
+        run: |
+          set -euo pipefail
+          # baseline-ref fourni : ancetre commun avec cette branche (utilise pour la validation).
+          # pull_request : tous les commits de la PR sont compares a la pointe de la branche cible.
+          # push         : les commits pousses sont compares au commit qui etait sur la branche avant le push.
+          # autre (workflow_dispatch) : le dernier commit est compare a son parent.
+          if [ -n "$BASELINE_REF" ]; then
+            BASE="$(git merge-base HEAD "$BASELINE_REF")"
+          else
+            case "$EVENT_NAME" in
+              pull_request) BASE="$PR_BASE_SHA" ;;
+              push)         BASE="$PUSH_BEFORE_SHA" ;;
+              *)            BASE="" ;;
+            esac
+          fi
+          # Nouvelle branche (before = 000...0), force-push ou declenchement manuel : on compare au parent.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            BASE="$(git rev-parse HEAD~1)"
+          fi
+          echo "sha=$BASE" >> "$GITHUB_OUTPUT"
+          echo "Evenement : $EVENT_NAME"
+          echo "Commit analyse : $(git rev-parse HEAD)"
+          echo "Commit de reference : $BASE"
+          echo "Commits compares :"
+          git log --oneline -50 "$BASE..HEAD"
+
+      - name: Semgrep scan (differentiel)
+        env:
+          BASELINE_SHA: ${{ steps.baseline.outputs.sha }}
+        run: |
+          # --baseline-commit : seules les alertes absentes du commit de reference sont rapportees.
+          # --error           : code de sortie 1 s'il reste au moins une alerte -> le job (et le build) echoue.
+          # --metrics=off     : aucune telemetrie envoyee a Semgrep.
+          semgrep scan \
+            --config "$SEMGREP_CONFIG" \
+            --baseline-commit "$BASELINE_SHA" \
+            --error \
+            --metrics=off \
+            --json-output="$RUNNER_TEMP/semgrep-new-findings.json" \
+            .
+
+      - name: Summary of new findings
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/semgrep-new-findings.json" ]; then
+            python .github/scripts/semgrep_report.py summary "$RUNNER_TEMP/semgrep-new-findings.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-new-findings
+          path: ${{ runner.temp }}/semgrep-new-findings.json
+          if-no-files-found: ignore

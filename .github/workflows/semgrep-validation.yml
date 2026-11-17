@@ -1,33 +1,100 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# IFT3913 - Tache 3
+# Workflow de validation rapide (sans build Maven) pour la branche tache3-semgrep.
+#  - differential : meme controle que dans main-jdk17-build.yml, mais compare a l'ancetre
+#                   commun avec origin/main (Tika d'origine, sans vulnerabilites introduites).
+#                   Doit ECHOUER tant que les 7 vulnerabilites sont presentes.
+#  - full-report  : scan COMPLET avant/apres et comparaison des deux rapports (informatif).
+
 name: Semgrep Validation
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - tache3-semgrep
 
+permissions:
+  contents: read
+
 jobs:
-  semgrep:
-    name: Semgrep Differential Scan
+  differential:
+    name: Semgrep differential scan
+    uses: ./.github/workflows/semgrep-diff.yml
+    with:
+      config: p/java
+      baseline-ref: origin/main
+
+  full-report:
+    name: Semgrep full report (avant / apres)
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-
+    timeout-minutes: 30
+    env:
+      SEMGREP_VERSION: "1.185.0"
     steps:
-      - name: Checkout repository
+      - name: Checkout (historique complet)
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
       - name: Install Semgrep
-        run: python -m pip install semgrep
+        run: python -m pip install "semgrep==${SEMGREP_VERSION}"
 
-
-      - name: Run Semgrep
+      - name: Checkout "avant" (ancetre commun avec origin/main)
+        id: before
         run: |
-          semgrep scan \
-            --config p/java \
-            --baseline-commit "$(git merge-base HEAD origin/main)" \
-            --error \
-            --metrics=off \
-            .
+          set -euo pipefail
+          BASE="$(git merge-base HEAD origin/main)"
+          echo "sha=$BASE" >> "$GITHUB_OUTPUT"
+          git worktree add --detach "$RUNNER_TEMP/before" "$BASE"
+          echo "Avant : $BASE"
+          echo "Apres : $(git rev-parse HEAD)"
+
+      - name: Scan complet "avant"
+        working-directory: ${{ runner.temp }}/before
+        run: semgrep scan --config p/java --metrics=off --json-output="$RUNNER_TEMP/semgrep-before.json" .
+
+      - name: Scan complet "apres"
+        run: semgrep scan --config p/java --metrics=off --json-output="$RUNNER_TEMP/semgrep-after.json" .
+
+      - name: Comparaison des deux rapports
+        env:
+          BEFORE_SHA: ${{ steps.before.outputs.sha }}
+        run: |
+          python .github/scripts/semgrep_report.py compare \
+            "$RUNNER_TEMP/semgrep-before.json" "$RUNNER_TEMP/before" \
+            "$RUNNER_TEMP/semgrep-after.json" . \
+            --before-label "avant ($BEFORE_SHA)" --after-label "apres ($GITHUB_SHA)" \
+            | tee "$RUNNER_TEMP/semgrep-comparison.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-full-reports
+          path: |
+            ${{ runner.temp }}/semgrep-before.json
+            ${{ runner.temp }}/semgrep-after.json
+            ${{ runner.temp }}/semgrep-comparison.md
+          if-no-files-found: ignore

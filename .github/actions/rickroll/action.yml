@@ -1,0 +1,60 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# IFT3913 - Tache 3 : action composite reutilisable.
+# Lit les rapports JUnit (surefire / failsafe) ; si au moins un cas de test a echoue,
+# elle "rickroll" le CI : banniere dans le journal, annotation d'erreur avec le lien
+# et page de resume (Job Summary) avec la video et la liste des tests en echec.
+# L'action ne change jamais le resultat du job : elle ne fait que le signaler.
+#
+# Utilisation :
+#   - if: failure()
+#     uses: ./.github/actions/rickroll            # dans ce depot
+#     # ou CarlosDanielZQ/tika/.github/actions/rickroll@tache3-semgrep depuis un autre depot
+#     with:
+#       reports: "**/target/surefire-reports/TEST-*.xml"
+
+name: "Rickroll on test failure"
+description: "Rickroll le CI quand au moins un cas de test JUnit a echoue."
+
+inputs:
+  reports:
+    description: "Motifs glob (separes par des espaces) des rapports JUnit XML"
+    required: false
+    default: "**/target/surefire-reports/TEST-*.xml"
+  video-url:
+    description: "Lien de la video"
+    required: false
+    default: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+outputs:
+  failed-tests:
+    description: "Nombre de cas de test en echec trouves dans les rapports"
+    value: ${{ steps.rickroll.outputs.failed-tests }}
+  rickrolled:
+    description: "true si le rickroll a ete declenche"
+    value: ${{ steps.rickroll.outputs.rickrolled }}
+
+runs:
+  using: "composite"
+  steps:
+    - id: rickroll
+      shell: bash
+      env:
+        RICKROLL_REPORTS: ${{ inputs.reports }}
+        RICKROLL_VIDEO_URL: ${{ inputs.video-url }}
+      run: python3 "$GITHUB_ACTION_PATH/rickroll.py"
