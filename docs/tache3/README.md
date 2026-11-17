@@ -111,11 +111,21 @@ La première version utilisait toujours `git merge-base HEAD origin/main`. Lors 
 | C | Ajout progressif de vulnérabilités (1re version) | le nombre d'alertes suit les ajouts, job rouge | ✅ 1 → 7 alertes ([run final](https://github.com/CarlosDanielZQ/tika/actions/runs/43940925801)) |
 | D | `semgrep-validation.yml` avec les 7 vulnérabilités finales (référence `origin/main`) | au moins une nouvelle alerte par vulnérabilité, job rouge, code de sortie 1 | ✅ 8 nouvelles alertes couvrant V1 à V7 (V7 est signalée par deux règles), code de sortie 1 ([run #23](https://github.com/CarlosDanielZQ/tika/actions/runs/43988070624)) |
 | E | `main-jdk17-build.yml` sur une PR `tache3-semgrep` → `main` (fork) qui introduit les 7 vulnérabilités ([PR #1](https://github.com/CarlosDanielZQ/tika/pull/1), fermée sans fusion) | `Semgrep Security Scan` rouge, `build` et `e2e-tests` **ignorés (skipped)**, workflow rouge | ✅ 8 nouvelles alertes par rapport à `main`, code de sortie 1, `build` et `e2e-tests` *skipped*, workflow en échec après 42 s au lieu d'environ 60 min ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43992516267)) |
-| F | `main-jdk17-build.yml` sur une PR `tache3-validation-f` → `tache3-semgrep` qui modifie du Java **sans** ajouter de vulnérabilité : ajout de `executeSafeQuery`, la version corrigée de V3 avec `PreparedStatement` et un paramètre lié | `Semgrep Security Scan` vert (0 nouvelle alerte, malgré du code SQL très proche de V3), `build` lancé | **À COMPLÉTER : lien du run** |
+| F | `main-jdk17-build.yml` sur une PR `tache3-validation-f` → `tache3-semgrep` qui modifie du Java **sans** ajouter de vulnérabilité : ajout de `executeSafeQuery`, la version corrigée de V3 avec `PreparedStatement` et un paramètre lié | `Semgrep Security Scan` vert (0 nouvelle alerte, malgré du code SQL très proche de V3), `build` lancé | ✅ « Aucune nouvelle alerte par rapport au commit de référence », Semgrep vert, `build` lancé ([PR #2](https://github.com/CarlosDanielZQ/tika/pull/2), fermée sans fusion, [run](https://github.com/CarlosDanielZQ/tika/actions/runs/43994679815)). Le build Maven a ensuite échoué après 33 min sur `S3PipeIntegrationTest`, pour une raison sans lien avec Semgrep (voir 1.6). |
 
 Les scénarios A à C ont été réalisés avec la première version du workflow. Les scénarios D à F valident la version finale.
 
 **Note sur `workflow_dispatch`.** Le déclencheur manuel ajouté au workflow n'est utilisable qu'une fois le fichier présent sur la branche par défaut (`main`) du dépôt : GitHub n'affiche le bouton « Run workflow » que dans ce cas. Les scénarios E et F passent donc par des pull requests. C'est d'ailleurs l'usage visé : bloquer une PR qui introduit une vulnérabilité.
+
+### 1.6. Échec du build Maven indépendant de Semgrep
+
+Dans le scénario F, le contrôle Semgrep a laissé passer le commit et le build Maven complet a démarré. Il a échoué après 33 minutes dans le module `tika-pipes-integration-tests`. Le test `S3PipeIntegrationTest` démarre un serveur MinIO avec Docker Compose (Testcontainers), et la commande `compose up -d` échoue sur le runner GitHub (« Local Docker Compose exited abnormally with code 1 »). C'est le même problème que celui observé lors des premières expérimentations. Il touche le code d'origine de Tika et n'a aucun lien avec nos modifications.
+
+Conséquences :
+
+- Les modules construits avant cet échec, dont `tika-core` qui contient `SemgrepSecurityDemo` et `RickrollDemoTest`, ont passé Spotless, checkstyle, forbiddenapis, la compilation et leurs tests.
+- `tika-server` vient après `tika-pipes` dans l'ordre du réacteur Maven. `SemgrepVulnerableResource` n'a donc pas été compilée par ce build. Elle a été compilée localement avec `javac` contre les signatures des API Jakarta utilisées.
+- Ce vrai échec de test a déclenché le **rickroll dans le build principal** (voir 4.2).
 
 ---
 
@@ -358,6 +368,8 @@ Faire échouer le vrai build de Tika pour tester l'action aurait coûté environ
 |---|---|---|---|
 | `test-fails` | `TIKA_RICKROLL_DEMO=true` | job rouge, rickroll (bannière, annotation, Job Summary) | ✅ job rouge, étape rickroll exécutée : annotation « Rickroll (1 test(s) en echec) » et Job Summary avec la vidéo et le test `RickrollDemoTest#testNeverGonnaGiveYouUp` ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43988070733)) |
 | `test-passes` | absente | test ignoré, job vert, aucun rickroll | ✅ job vert, étape rickroll ignorée (*skipped*) (même [run](https://github.com/CarlosDanielZQ/tika/actions/runs/43988070733)) |
+
+**Rickroll dans le vrai build.** Dans le scénario F (section 1.6), un vrai test de Tika a échoué dans `main jdk17 build` : `S3PipeIntegrationTest` (erreur Docker Compose). L'action s'est déclenchée sans intervention de notre part : annotation « Rickroll (1 test(s) en echec) » et Job Summary « Rickroll ! 1 cas de test en echec » avec la classe et le message d'erreur ([run](https://github.com/CarlosDanielZQ/tika/actions/runs/43994679815)). C'est exactement le comportement demandé. Ce run a aussi révélé un petit défaut : l'erreur survenait pendant l'initialisation de la classe de test, et le `<testcase>` JUnit n'avait pas de nom. L'action affiche maintenant « (initialisation de la classe) » au lieu d'une cellule vide.
 
 Le script a aussi été testé localement avec un faux rapport JUnit contenant un test en échec (rickroll déclenché, sorties `failed-tests=1`, `rickrolled=true`) et sans rapport (notice, pas de rickroll).
 

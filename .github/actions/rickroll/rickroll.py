@@ -63,7 +63,9 @@ def failed_cases(report):
             node = case.find(tag)
             if node is not None:
                 message = (node.get("message") or node.get("type") or "").strip().splitlines()
-                failures.append((case.get("classname", "?"), case.get("name", "?"), tag,
+                # Un echec pendant l'initialisation de la classe (ex. @BeforeAll, conteneur Docker)
+                # produit un <testcase> sans nom.
+                failures.append((case.get("classname") or "?", case.get("name") or "(initialisation de la classe)", tag,
                                  message[0][:150] if message else ""))
                 break
     return failures
