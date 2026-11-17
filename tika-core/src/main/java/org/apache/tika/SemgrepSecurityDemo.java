@@ -20,7 +20,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.Socket;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import javax.crypto.Cipher;
 import javax.xml.parsers.DocumentBuilder;
@@ -60,6 +62,15 @@ public final class SemgrepSecurityDemo {
         Statement statement = connection.createStatement();
         String query = "SELECT * FROM users WHERE name = '" + userInput + "'";
         return statement.executeQuery(query);
+    }
+
+    // Version corrigee de V3 (scenario F de validation : aucune nouvelle alerte attendue).
+    // La requete est une constante et l'entree est transmise comme parametre lie :
+    // le pilote JDBC la traite comme une valeur, jamais comme du SQL.
+    public static ResultSet executeSafeQuery(Connection connection, String userInput) throws SQLException {
+        PreparedStatement statement = connection.prepareStatement("SELECT * FROM users WHERE name = ?");
+        statement.setString(1, userInput);
+        return statement.executeQuery();
     }
 
     // V4 - CWE-611 : XML External Entity (XXE).
